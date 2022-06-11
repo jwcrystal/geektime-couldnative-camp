@@ -9,7 +9,7 @@ docker pull jwang10/cncamp-http-server:latest
 ```
 - 透過下方指令執行即可
 ```shell
-docker run --rm -p 8080:8080 jwang10/cncamp-http-server
+docker run -dp 8080:8080 jwang10/cncamp-http-server
 ```
 
 
@@ -29,15 +29,15 @@ docker run --rm -p 8080:8080 jwang10/cncamp-http-server
 > - bridge： Docker 預設就是使用此網路模式，這種網路模式就像是 NAT 的網路模式，例如實體主機的 IP 是 192.168.1.10 它會對應到 Container 裡面的 172.17.0.2，在啟動 Docker 的 service 時會有一個 docker0 的網路卡就是在做此網路的橋接
 > - overlay： container 之間可以在不同的實體機器上做連線，例如 Host1 有一個 container1，然後 Host2 有一個 container2，container1 就可以使用 overlay 的網路模式和 container2 做網路的連線
 
-- Dockerfile
+- A normal Dockerfile
 ```dockerfile
 # syntax=jwang/http-server:1
 FROM golang:1.18-alpine
 
 WORKDIR /practice-http-server
 
-copy . ./
-run echo "Install dependent modules" && \
+COPY . .
+RUN echo "Install dependent modules" && \
     go mod download && go mod verify
 
 RUN echo "Copy files" && \
@@ -48,6 +48,28 @@ EXPOSE 8080
 
 CMD ["/http-server"]
 
+```
+- Resize Dockerfile
+```dockerfile
+FROM golang:1.18-alpine AS builder
+
+#ENV GO111MODULE=off  \
+#	CGO_ENABLED=0  \
+#	GOOS=linux    \
+#	GOARCH=amd64
+
+WORKDIR /build
+COPY . .
+RUN echo "Install dependent modules" && \
+    go mod download && go mod verify && \
+    cd demo/ && \
+    go build -o http-server .
+
+FROM busybox
+COPY --from=builder /build/demo/http-server /
+EXPOSE 8080
+CMD ["/http-server"]
+#ENTRYPOINT ["/http-server"]
 ```
 
 - 查看local ip
