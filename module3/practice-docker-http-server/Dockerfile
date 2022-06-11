@@ -1,4 +1,4 @@
-# syntax=jwang/http-server:1
+## syntax=jwang/http-server:1.0
 FROM golang:1.18-alpine
 
 WORKDIR /practice-http-server
@@ -14,4 +14,3 @@ RUN echo "Copy files" && \
 EXPOSE 8080
 
 CMD ["/http-server"]
-
