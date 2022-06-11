@@ -2,6 +2,10 @@
 
 > note: 此OS架構為 linux/arm64
 
+* [使用方式](#使用方式)
+* [手動操作](#手動操作)
+
+
 ### 使用方式
 - 從docker hub拉包, 或是透過[手動操作](#手動操作)
 ```shell
@@ -53,8 +57,8 @@ CMD ["/http-server"]
 ```dockerfile
 FROM golang:1.18-alpine AS builder
 
-#ENV GO111MODULE=off  \
-#	CGO_ENABLED=0  \
+ENV CGO_ENABLED=0 
+#   GO111MODULE=off  \
 #	GOOS=linux    \
 #	GOARCH=amd64
 
@@ -80,3 +84,9 @@ ps -ef | grep <launch-file>
 sudo nsenter -t <PID> -n ip a
 ```
 ![iShot_2022-06-08_17.56.22.png](assets/iShot_2022-06-08_17.56.22.png)
+
+### 注意事項
+
+- 此在縮小鏡像體積時候，遇到以下錯誤
+  - solved： 在`dockerfile`中加入`cgo=0`的環境變數
+  ![img.png](assets/docker_file_not_found.png)
