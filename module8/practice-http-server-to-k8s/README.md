@@ -16,16 +16,18 @@ kubectl create -f config.yaml // config map
 
 - Update
 
+  補充源碼部分，提供`log`訊息和程式優雅關閉
+
   加入 `Service` 和 `Ingress`方式暴露對外開放端口
 
   - **Service**
 
     可以採用以下指令方式或是加入`svc.yaml`到集群
-
+  
     ```go
     kubectl expose deploy httpserver --selector app=httpserver --port=30908 --type=NodePort
     ```
-
+  
   - **Ingress - nginx**
   
     `Ingress`簡易，只需要設定`tls`、`rules`
@@ -60,13 +62,20 @@ kubectl create -f config.yaml // config map
 - 優雅關閉
 - 配置資源需求跟Qos
 - 實現 liveness、readiness探活
+- 日誌訊息
 
 
 ### Demo
 
 ![demo_printenv.png](assets/demo_printenv.png)
 ![demo_healthz.png](assets/demo_healthz.png)
+
 - Update
+  
+  - 補充之前的優雅關閉和log訊息
+  
+
+![img.png](assets/graceStop.png)
 
 `Service`透過`node`的對外ip及暴露的port即可取得資訊
 ![img.png](assets/svc.png)
