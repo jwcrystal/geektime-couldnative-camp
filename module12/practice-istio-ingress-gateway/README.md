@@ -72,12 +72,12 @@ curl --resolve httpsserver.cncamp.io:443:$INGRESS_IP https://httpsserver.cncamp.
 
 ## Demo
 
-![image-20220814232624788](/Users/jwang/Documents/Workspace/GoPractice/Projects/cncamp/module12/practice-istio-ingress-gateway/assets/image-20220814232624788.png)
+![image-20220814232624788](assets/image-20220814232624788.png)
 
-![image-20220814233036679](/Users/jwang/Documents/Workspace/GoPractice/Projects/cncamp/module12/practice-istio-ingress-gateway/assets/image-20220814233036679.png)
+![image-20220814233036679](assets/image-20220814233036679.png)
 
-![image-20220814233214754](/Users/jwang/Documents/Workspace/GoPractice/Projects/cncamp/module12/practice-istio-ingress-gateway/assets/image-20220814233214754.png)
+![image-20220814233214754](assets/image-20220814233214754.png)
 
 - 這邊顯示的IP為節點IP
 
-![image-20220814233255301](/Users/jwang/Documents/Workspace/GoPractice/Projects/cncamp/module12/practice-istio-ingress-gateway/assets/image-20220814233255301.png)
+![image-20220814233255301](assets/image-20220814233255301.png)
