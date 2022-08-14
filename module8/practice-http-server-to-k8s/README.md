@@ -10,7 +10,7 @@
 把`pod`和相對應的`configmap`加入集群即可訪問。
 
 ```shell
-kubectl create -f deploy.yaml
+kubectl create -f httpserver.yaml
 kubectl create -f config.yaml // config map
 ```
 
