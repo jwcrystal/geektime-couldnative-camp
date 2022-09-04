@@ -23,7 +23,7 @@
 每 1 秒往队列中放入一个类型为 int 的元素，队列满时生产者可以阻塞
 消费者：
 每一秒从队列中获取一个元素并打印，队列为空时消费者阻塞
-// ---
+//---
 func main() {
 	ch := make(chan string)
 	go Producer(ch)
@@ -45,7 +45,6 @@ func Consumer(c chan string) {
 		fmt.Printf("Concumer[%s]\n", v)
 	}
 }
-
 ```
 
 - 並使用Golang原生的`http.handler`，撰寫一個http server
@@ -583,6 +582,132 @@ spec:
   replicas: 1
 ```
 
+## Etcd
+
+### 架構
+
+![Untitled](assets/Untitled.png)
+
+etcd 的架構圖中我們可以看到，etcd 主要分為四個部分：
+
+- HTTP Server： 用於處理用戶發送的 API 請求以及其它 etcd 節點的同步與心跳信息請求
+- Store：用於處理 etcd 支持的各類功能的事務，包括數據索引、節點狀態變更、監控與反饋、事件處理與執行等等，是 etcd 對用戶提供的大多數 API 功能的具體實現
+- Raft：Raft 強一致性算法的具體實現，是 etcd 的核心
+- WAL：`Write Ahead Log`（預寫式日誌），是 etcd 的數據存儲方式。除了在內存中存有所有數據的狀態以及節點的索引以外，etcd 就通過 WAL 進行持久化存儲。 WAL 中，**`所有的數據提交前都會事先記錄日誌`**。 Snapshot 是為了防止數據過多而進行的狀態快照；Entry 表示存儲的具體日誌內容
+
+![Untitled](assets/Untitled%201.png)
+
+- `etcd`面向`client`和`peer`節點開放`http`服務以及`grpc`服務，對於像watch機制就是基於`grpc`的`stream`通信模式實現的；
+- `EtcdServer`是`etcd`上層結構體，其負責對外提供服務，且負責應用層的實現，比如操作應用層存儲器，管理`leassor`、`watch`；
+- `raftNode`負責上層與`raft`層的銜接。其負責將應用的需求傳遞到raft中進行處理（通過`Step`函數）、在消息發送到其他節點前將消息保存到`WAL`中、調用傳輸器發送消息；
+- `raft`是`raft`協議的承載者；
+- `raftLog`用於存儲狀態機信息：`memoryStorge`保存穩定的記錄，`unstable`保存不穩定的記錄
+
+### 存儲
+
+數據默認存放在 `/var/lib/etcd/default/`目錄。分別是 snap 和 wal目錄
+
+- Snap
+    - 存放快照數據，存儲etcd的數據狀態
+    - etcd防止WAL文件過多而設置的快照
+- WAL
+    - 存放預寫式日誌
+    - 最大的作用是記錄了整個數據變化的全部歷程
+    - 在etcd中，所有數據的修改在提交前都要先寫入到WAL中
+    
+
+WAL 機制的原理：「修改並不直接寫入到數據庫文件中，而是寫入到另外一個稱為 WAL 的文件中；如果事務失敗，WAL 中的記錄會被忽略，撤銷修改；如果事務成功，它將在隨後的某個時間被寫回到數據庫文件中，提交修改。」
+
+WAL 機制使得 etcd 具備了以下兩個功能：
+
+- `故障快速恢復`： 當你的數據遭到破壞時，就可以通過執行所有 WAL 中記錄的修改操作，快速從最原始的數據恢復到數據損壞前的狀態
+- `數據回滾（undo）/重做（redo）`：因為所有的修改操作都被記錄在 WAL 中，需要回滾或重做，只需要方向或正向執行日誌中的操作即可
+
+[WAL日誌](https://github.com/etcd-io/etcd/tree/main/tools/etcd-dump-logs)是二進制的，解析出來後是數據結構 `LogEntry` 
+
+- type，一種是0表示 Normal，1表示 ConfChange ( ConfChange 表示etcd 本身的配置變更同步，比如有新的節點加入等)
+- term，代表Leader的任期
+- index，這個序號是嚴格有序遞增的，代表變更序號
+- 二進制的 data，保存 request 對象的 pb 結構。比如請求key=value，會把整個請求當作data
+
+![Untitled](assets/Untitled%202.png)
+
+### v2/v3
+
+etcd 目前支持 V2 和 V3 兩個大版本，這兩個版本在實現上有比較大的不同，一方面是對外提供接口的方式，另一方面就是底層的存儲引擎
+
+- V2 版本的實例是一個純內存的實現，所有的數據都沒有存儲在磁盤上
+- V3 版本的實例就支持了數據的持久化
+
+v3默認採用[boltdb](https://github.com/boltdb/bolt)
+
+![Untitled](assets/Untitled%203.png)
+
+### Raft算法
+
+> ref：
+[https://zhuanlan.zhihu.com/p/32052223](https://zhuanlan.zhihu.com/p/32052223)
+> 
+
+解決三個問題：`節點選舉`、`日誌複製`以及`安全性`
+
+每一個 Raft 集群中都包含多個服務器，在任意時刻，每一個etcd memeber只可能處於 `Leader`、`Follower` 以及 `Candidate` 三種狀態；
+
+- **在處於正常的狀態時，集群中只會存在一個 Leader 狀態，其餘的服務器都是 Follower 狀態**
+
+**所有的 `Follower` 節點都是被動的，它們不會主動發出任何的請求，只會響應 `Leader` 和 `Candidate` 發出的請求**。對於每一個用戶的可變操作，都會被路由給 Leader 節點進行處理，**除了 `Leader` 和 `Follower` 節點之外，`Candidate` 節點其實只是集群運行過程中的一個臨時狀態**。
+
+**每一個服務器都會存儲當前集群的最新任期**，它就像是一個單調遞增的邏輯時鐘，能夠同步各個節點之間的狀態，當前節點持有的任期會隨著每一個請求被傳遞到其他的節點上
+
+Raft 協議在每一個任期的開始時都會從一個集群中選出一個節點作為集群的 **Leader 節點，這個節點會負責集群中的日誌的複制以及管理工作**。
+
+- Raft 協議本身不關心應用數據，也就是 data 中的部分，一致性都通過同步wal 日誌來實現，每個節點將從主節點收到的data append 到本地的存儲
+- Raft 只關心日誌的同步狀態，如果本地存儲實現的有 bug，比如沒有正確地將 data app 到本地，也可能會導致數據不一致
+
+### Watch
+
+客戶端通過監聽指定的key可以迅速感知key的變化並作出相應處理
+
+- watch機制的實現依賴於資源版本號`revision`的設計，每一次key的更新都會使得revision原子遞增，因此根據不同的版本號revision的對比就可以感知新事件的發生
+- etcd watch機制有著廣泛的應用，
+    - 如利用etcd實現分佈式鎖
+    - k8s中監聽各種資源的變化，從而實現各種controller邏輯等
+
+![Untitled](assets/Untitled%204.png)
+
+### 常見參數
+
+- `-listen-peer-urls`
+  
+    用於監聽夥伴通訊的URL列表。這個標記告訴 etcd 在特定的 `scheme://IP:port` 組合上從它的伙伴接收進來的請求，http 或者 https
+    環境變量: ETCD_LISTEN_PEER_URLS
+    
+- `-listen-client-urls`
+  
+    用於監聽客戶端通訊的URL列表。這個標記告訴 etcd 在特定的 `scheme://IP:port` 組合上從客戶端接收進來的請求。 scheme 可是 http 或者 https。
+    環境變量: ETCD_LISTEN_CLIENT_URLS
+    
+- `-initial-advertise-peer-urls`
+  
+    列出這個成員的伙伴 URL 以便通告給集群的其他成員。這些地方用於在集群中通訊 etcd 數據。至少有一個必須對所有集群成員可以路由的。這些 URL 可以包含域名。
+    環境變量: ETCD_INITIAL_ADVERTISE_PEER_URLS
+    
+- `-initial-cluster`
+  
+    為啟動初始化集群配置。
+    環境變量: ETCD_INITIAL_CLUSTER
+    
+- `-initial-cluster-state`
+  
+    初始化集群狀態("new" or "existing")。在初始化靜態(initial static)或者 DNS 啟動 (DNS bootstrapping) 期間為所有成員設置為 new 。如果這個選項被設置為 existing , etcd 將試圖加入已有的集群。如果設置為錯誤的值，etcd 將嘗試啟動但安全失敗。
+    環境變量: ETCD_INITIAL_CLUSTER_STATE
+    
+- `-advertise-client-urls`
+  
+    列出這個成員的客戶端URL，通告給集群中的其他成員。這些 URL 可以包含域名。
+    環境變量: ETCD_ADVERTISE_CLIENT_URLS
+    
+
 ## Kube-apiserver
 
 - Kubernetes最重要的核心組件之一
@@ -593,7 +718,7 @@ spec:
     - 只有`API Server`能直接操作`etcd`
 - 每個請求都會經過多個階段訪問才會被接受
 
-![Untitled](assets/Untitled.png)
+![Untitled](assets/Untitled%205.png)
 
 ### 認證
 
@@ -630,7 +755,7 @@ spec:
 - 課後練習
     - 採用`Gitlab api` + `k8s-v1 api`建立k8s webhook授權後台
     
-    ![Untitled](assets/Untitled%201.png)
+    ![Untitled](assets/Untitled%206.png)
     
     ```go
     //轉發認證請求
@@ -740,7 +865,7 @@ roleRef:
         - 檢查鏡像url不是對應的倉庫地址，拒絕
         - 不允許CPU request超過10%的pod spec
     
-    ![Untitled](assets/Untitled%202.png)
+    ![Untitled](assets/Untitled%207.png)
     
 - Alwayspullimages
     - 多租戶集群是有用的，強制鏡像需被拉去，而拉去鏡像就需要憑證
@@ -810,7 +935,7 @@ roleRef:
     - 提供Leader選舉機制，確保多個`Controller`實例同時運行，且只有`Leader`實例提供真正的服務，其他則處於就緒狀態，防止`Leader`出現故障，還能保證`Pod`能被即時調度，犧牲更多資源提升`Controller`可用性。
     - 本質是利用kubernetes中的`configmap`、`endpoint`或是`lease`資源實現一個分佈式鎖，拿到鎖的節點為leader，且定期`renew`。**當leader掛掉後，租約到期，其他節點就能成為新leader**
     
-    ![Untitled](assets/Untitled%203.png)
+    ![Untitled](assets/Untitled%208.png)
     
 - Controller
     - `kube-controller-manager`將會啟動多個controller服務
@@ -818,14 +943,14 @@ roleRef:
     - 當`api-server`將`deployment數據`存入到`etcd`後，`controller-manager`通過`reflector`對數據進行監聽，監聽到事件後將數據存入`DeltaFIFO`中，也會存入到自己的緩存中。 `informer`通過消費`DeltaFIFO`，將資源數據存入`indexer`中，同時將事件進行通知，由`controller`接受到通知後，將該事件發送到`workerqueue`中。而`workerqueue`中的數據如何進行處理，則是由`controller-manager`來控制
     - 代碼利用工廠模式創建各類`informer`，簡化了s實例創建
     
-    ![Untitled](assets/Untitled%204.png)
+    ![Untitled](assets/Untitled%209.png)
     
     - 常見內部Controller
         - [https://github.com/kubernetes/kubernetes/tree/master/pkg/controller](https://github.com/kubernetes/kubernetes/tree/master/pkg/controller)
 
 ## Kubelet
 
-![Untitled](assets/Untitled%205.png)
+![Untitled](assets/Untitled%2010.png)
 
 - 每個節點上都運行一個`kubelet`服務進程，默認`10250`端口
 - CRI與底層容器交互
@@ -843,18 +968,18 @@ roleRef:
 - syncloop
     - 檢測實際環境中container出現的變化，其每秒鐘列出列出當前節點所有pod和所有container，與自己緩存中podRecord中對比，生成每個container的event，送到`event channel`，kubelet主循環`syncLoop`負責處理`event channel`中的事件
     
-    ![Untitled](assets/Untitled%206.png)
+    ![Untitled](assets/Untitled%2011.png)
     
 
 ### Pod lifecycle
 
 - 啟動流程
 
-![Untitled](assets/Untitled%207.png)
+![Untitled](assets/Untitled%2012.png)
 
-![Untitled](assets/Untitled%208.png)
+![Untitled](assets/Untitled%2013.png)
 
-![Untitled](assets/Untitled%209.png)
+![Untitled](assets/Untitled%2014.png)
 
 ### CRI
 
@@ -865,9 +990,9 @@ roleRef:
     - Runtime Service：管理容器生命週期和容器交互的調用
 - Docker內部容器運行時功能的核心組件是`containerd`，後來`containerd`可直接跟kubelet通過CRI對接，獨立於Kubernetes中使用
   
-    ![Untitled](assets/Untitled%2010.png)
+    ![Untitled](assets/Untitled%2015.png)
     
-    ![Untitled](assets/Untitled%2011.png)
+    ![Untitled](assets/Untitled%2016.png)
     
 
 ### CNI
@@ -899,4 +1024,4 @@ roleRef:
         - PV
         - PVC
 
-![Untitled](assets/Untitled%2012.png)
+![Untitled](assets/Untitled%2017.png)
