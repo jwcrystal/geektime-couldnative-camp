@@ -593,7 +593,7 @@ spec:
     - 只有`API Server`能直接操作`etcd`
 - 每個請求都會經過多個階段訪問才會被接受
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled.png)
+![Untitled](assets/Untitled.png)
 
 ### 認證
 
@@ -630,7 +630,7 @@ spec:
 - 課後練習
     - 採用`Gitlab api` + `k8s-v1 api`建立k8s webhook授權後台
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%201.png)
+    ![Untitled](assets/Untitled%201.png)
     
     ```go
     //轉發認證請求
@@ -740,7 +740,7 @@ roleRef:
         - 檢查鏡像url不是對應的倉庫地址，拒絕
         - 不允許CPU request超過10%的pod spec
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%202.png)
+    ![Untitled](assets/Untitled%202.png)
     
 - Alwayspullimages
     - 多租戶集群是有用的，強制鏡像需被拉去，而拉去鏡像就需要憑證
@@ -810,7 +810,7 @@ roleRef:
     - 提供Leader選舉機制，確保多個`Controller`實例同時運行，且只有`Leader`實例提供真正的服務，其他則處於就緒狀態，防止`Leader`出現故障，還能保證`Pod`能被即時調度，犧牲更多資源提升`Controller`可用性。
     - 本質是利用kubernetes中的`configmap`、`endpoint`或是`lease`資源實現一個分佈式鎖，拿到鎖的節點為leader，且定期`renew`。**當leader掛掉後，租約到期，其他節點就能成為新leader**
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%203.png)
+    ![Untitled](assets/Untitled%203.png)
     
 - Controller
     - `kube-controller-manager`將會啟動多個controller服務
@@ -818,14 +818,14 @@ roleRef:
     - 當`api-server`將`deployment數據`存入到`etcd`後，`controller-manager`通過`reflector`對數據進行監聽，監聽到事件後將數據存入`DeltaFIFO`中，也會存入到自己的緩存中。 `informer`通過消費`DeltaFIFO`，將資源數據存入`indexer`中，同時將事件進行通知，由`controller`接受到通知後，將該事件發送到`workerqueue`中。而`workerqueue`中的數據如何進行處理，則是由`controller-manager`來控制
     - 代碼利用工廠模式創建各類`informer`，簡化了s實例創建
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%204.png)
+    ![Untitled](assets/Untitled%204.png)
     
     - 常見內部Controller
         - [https://github.com/kubernetes/kubernetes/tree/master/pkg/controller](https://github.com/kubernetes/kubernetes/tree/master/pkg/controller)
 
 ## Kubelet
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%205.png)
+![Untitled](assets/Untitled%205.png)
 
 - 每個節點上都運行一個`kubelet`服務進程，默認`10250`端口
 - CRI與底層容器交互
@@ -843,18 +843,18 @@ roleRef:
 - syncloop
     - 檢測實際環境中container出現的變化，其每秒鐘列出列出當前節點所有pod和所有container，與自己緩存中podRecord中對比，生成每個container的event，送到`event channel`，kubelet主循環`syncLoop`負責處理`event channel`中的事件
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%206.png)
+    ![Untitled](assets/Untitled%206.png)
     
 
 ### Pod lifecycle
 
 - 啟動流程
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%207.png)
+![Untitled](assets/Untitled%207.png)
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%208.png)
+![Untitled](assets/Untitled%208.png)
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%209.png)
+![Untitled](assets/Untitled%209.png)
 
 ### CRI
 
@@ -865,9 +865,9 @@ roleRef:
     - Runtime Service：管理容器生命週期和容器交互的調用
 - Docker內部容器運行時功能的核心組件是`containerd`，後來`containerd`可直接跟kubelet通過CRI對接，獨立於Kubernetes中使用
   
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%2010.png)
+    ![Untitled](assets/Untitled%2010.png)
     
-    ![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%2011.png)
+    ![Untitled](assets/Untitled%2011.png)
     
 
 ### CNI
@@ -899,4 +899,4 @@ roleRef:
         - PV
         - PVC
 
-![Untitled](%E7%B8%BD%E7%B5%90%E7%AD%86%E8%A8%98%20212735cf19f54e50856542c1d0a1387f/Untitled%2012.png)
+![Untitled](assets/Untitled%2012.png)
